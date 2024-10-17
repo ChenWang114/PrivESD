@@ -1,0 +1,12 @@
+OBJDIRS += tree
+TREESRC  := tree.cc m_variate_poly.cc util_poly.cc util.cc
+TREEOBJ := $(patsubst %.cc,$(OBJDIR)/tree/%.o,$(TREESRC))
+
+all:    $(OBJDIR)/libtree.so
+$(OBJDIR)/libtree.so: $(TREEOBJ)
+	$(CXX) -shared -o $@ $(TREEOBJ) $(SHAIFHEPATH)/fhe.a $(LDFLAGS)
+
+#all:	$(OBJDIR)/tree/test_tree 
+$(OBJDIR)/tree/test_tree: $(OBJDIR)/tree/test_tree.o $(OBJDIR)/libtree.so
+	$(CXX) $< -o $@ $(SHAIFHEPATH)/fhe.a $(LDFLAGS) -ltree -L$(NTLLIBPATH) -lntl -lgf2x
+# vim: set noexpandtab:

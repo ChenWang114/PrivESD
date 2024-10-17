@@ -1,0 +1,481 @@
+#include <assert.h>
+#include <vector>
+#include <mpc/lsic.hh>
+#include <mpc/garbled_comparison.hh>
+#include <mpc/enc_comparison.hh>
+#include <mpc/rev_enc_comparison.hh>
+#include <mpc/enc_argmax.hh>
+#include <mpc/linear_enc_argmax.hh>
+#include <mpc/tree_enc_argmax.hh>
+#include <mpc/change_encryption_scheme.hh>
+
+#include <crypto/gm.hh>
+#include <NTL/ZZ.h>
+#include <util/util.hh>
+#include <math/util_gmp_rand.h>
+#include <mpc/private_comparison.hh>
+#include <functional>
+
+#include <FHE.h>
+#include <EncryptedArray.h>
+
+#include<iostream>
+
+using namespace std;
+using namespace NTL;
+using namespace Paillier;
+int num_iter = 25;
+
+INIT_TIMER
+
+void load_dataset_base(vector<vector<double>> &datas, vector<int> &label, const string &filename) {
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Error opening file: " << filename << std::endl;
+        exit(1);
+    }
+    string line;
+    while (std::getline(file, line)) {
+        std::istringstream record(line);
+        vector<double> data;
+        data.push_back(1);
+        double temp;
+        while (record >> temp) {
+            data.push_back(temp);
+        }
+        label.push_back(int(temp));
+        data.pop_back();
+        datas.push_back(data);
+    }
+}
+
+static void test_linear_classifier_server(unsigned int model_size, unsigned int nbits_max)
+{
+#ifdef BENCHMARK
+    cout << "BENCHMARK flag set" << endl;
+    BENCHMARK_INIT
+#endif
+    
+    gmp_randstate_t randstate;
+    gmp_randinit_default(randstate);
+    gmp_randseed_ui(randstate,time(NULL));
+    
+    srand(time(NULL));
+    
+    assert(nbits_max > model_size + 1);
+    unsigned int nbits = nbits_max - model_size - 1;
+    
+    long two_nbits = 1 << nbits;
+    
+    vector<mpz_class> model(model_size+1);
+    for (size_t i = 0; i <= model_size; i++) {
+        model[i] = rand()%two_nbits;
+        if (rand()%2) {
+            model[i] *= -1;
+        }
+    }
+    
+    cout << "Server for linear classifier\n";
+    cout << "Model as dimension " << model_size << "\n";
+    cout << nbits_max << " bits of precision" << endl;
+    cout << "Init server" << endl;
+    Linear_Classifier_Server server(randstate,1024,100,model,nbits_max);
+    
+    cout << "Start server" << endl;
+    server.run();
+}
+
+
+static void bench_linear_classifier_server(const vector<mpz_class> &model, unsigned int nbits_max, unsigned int nRounds = 10)
+{
+#ifdef BENCHMARK
+    cout << "BENCHMARK flag set" << endl;
+    BENCHMARK_INIT
+#endif
+    unsigned int model_size = model.size();
+
+    cout << "Server for linear classifier\n";
+    cout << "Model as dimension " << model_size << "\n";
+    cout << nbits_max << " bits of precision" << endl;
+
+    gmp_randstate_t randstate;
+    gmp_randinit_default(randstate);
+    gmp_randseed_ui(randstate,time(NULL));
+    
+//    srand(time(NULL));
+//    
+//    assert(nbits_max > model_size + 1);
+//    unsigned int nbits = nbits_max - model_size - 1;
+//    
+//    long two_nbits = 1 << nbits;
+//    
+//    vector<mpz_class> model(model_size+1);
+//    for (size_t i = 0; i <= model_size; i++) {
+//        model[i] = rand()%two_nbits;
+//        if (rand()%2) {
+//            model[i] *= -1;
+//        }
+//    }
+    
+//    assert(nbits_max > model_size + 1);
+
+    
+    cout << "Init server" << endl;
+    Bench_Linear_Classifier_Server server(randstate,1024,100,model,nbits_max, nRounds);
+    server.set_threads_per_session(2);
+    
+    cout << "Start server" << endl;
+    server.run();
+}
+
+static void bench_linear_classifier_server(unsigned int model_size, unsigned int nbits_max, unsigned int nRounds = 10)
+{
+    srand(time(NULL));
+    
+    assert(nbits_max > model_size + 1);
+    unsigned int nbits = nbits_max - model_size - 1;
+    
+    long two_nbits = (1 << nbits);
+    
+    vector<mpz_class> model(model_size+1);
+    for (size_t i = 0; i <= model_size; i++) {
+        model[i] = rand()%two_nbits;
+        if (rand()%2) {
+            model[i] *= -1;
+        }
+    }
+    
+    bench_linear_classifier_server(model, nbits_max, nRounds);
+}
+
+static vector<mpz_class> read_model(string file)
+{
+    std::ifstream infile(file);
+    double v;
+    vector<mpz_class> values;
+    while (infile >> v){
+        long v_int = v * 1e13;
+        values.push_back(v_int);
+    }
+    
+    return values;
+}
+
+int main(int argc, char* argv[])
+{
+    if (argc < 2){
+        // randomly generate model
+        cout << "Randomly generate model\n";
+
+        //    test_linear_classifier_server(30, 64);
+        bench_linear_classifier_server(30, 64,10);
+    }else{
+        cout << "Read model file " << argv[1] << endl;
+
+        vector<mpz_class> model = read_model(argv[1]);
+        bench_linear_classifier_server(model,64,10);
+    }
+
+    
+    
+    return 0;
+}
+
+double scalarProduct(const vector<double> &w, const vector<double> &x) {
+    double ret = 0.0;
+    for (int i = 0; i < w.size(); i++) {
+        v[i+1] = a*v[i]+(1-a)*g;
+        p[i] = p[i] - e * v[i+1];
+        w1[i] += w[i] * q-e*q*(1/m)*(y[i]*q-((w/q)*x[i]-b/q));
+        b1[i] += b[i] * q-e*q*(1/m)*(y[i]*q-((w/q)*x[i]-b/q));
+        z = w1[i] * x[i] + b1[i];
+    }
+    return z, p;
+}
+
+double sigmoid(const double &z) {
+    sigmod = 0.25z+0.5;
+    return sigmod;
+}
+
+double local (const double &sigmod) {
+    loss = 1/m *(y-w*x+b/q);
+    h = q * 1/(1+sigmod);
+    return loss, h;
+}
+
+double local (const double &loss, const double &h, const double &k) {
+    for (int i = 0; i < k; i++) {
+        loss[i+1] = n[i]/n*loss[i];
+        h[i+1] = n[i]/n*h[i];
+}
+    return loss, h;
+}
+
+static void test_linear_classifier_server(unsigned int model_size, unsigned int nbits_max)
+{
+#ifdef BENCHMARK
+    cout << "BENCHMARK flag set" << endl;
+    BENCHMARK_INIT
+#endif
+    
+    gmp_randstate_t randstate;
+    gmp_randinit_default(randstate);
+    gmp_randseed_ui(randstate,time(NULL));
+    
+    srand(time(NULL));
+    
+    assert(nbits_max > model_size + 1);
+    unsigned int nbits = nbits_max - model_size - 1;
+    
+    long two_nbits = 1 << nbits;
+    
+    vector<mpz_class> model(model_size+1);
+    for (size_t i = 0; i <= model_size; i++) {
+        model[i] = rand()%two_nbits;
+        if (rand()%2) {
+            model[i] *= -1;
+        }
+    }
+    
+    cout << "Server for linear classifier\n";
+    cout << "Model as dimension " << model_size << "\n";
+    cout << nbits_max << " bits of precision" << endl;
+    cout << "Init server" << endl;
+    Linear_Classifier_Server server(randstate,1024,100,model,nbits_max);
+    
+    cout << "Start server" << endl;
+    server.run();
+}
+
+
+static void bench_linear_classifier_server(const vector<mpz_class> &model, unsigned int nbits_max, unsigned int nRounds = 10)
+{
+#ifdef BENCHMARK
+    cout << "BENCHMARK flag set" << endl;
+    BENCHMARK_INIT
+#endif
+    unsigned int model_size = model.size();
+
+    cout << "Server for linear classifier\n";
+    cout << "Model as dimension " << model_size << "\n";
+    cout << nbits_max << " bits of precision" << endl;
+
+    gmp_randstate_t randstate;
+    gmp_randinit_default(randstate);
+    gmp_randseed_ui(randstate,time(NULL));
+    
+//    srand(time(NULL));
+//    
+//    assert(nbits_max > model_size + 1);
+//    unsigned int nbits = nbits_max - model_size - 1;
+//    
+//    long two_nbits = 1 << nbits;
+//    
+//    vector<mpz_class> model(model_size+1);
+//    for (size_t i = 0; i <= model_size; i++) {
+//        model[i] = rand()%two_nbits;
+//        if (rand()%2) {
+//            model[i] *= -1;
+//        }
+//    }
+    
+//    assert(nbits_max > model_size + 1);
+
+    
+    cout << "Init server" << endl;
+    Bench_Linear_Classifier_Server server(randstate,1024,100,model,nbits_max, nRounds);
+    server.set_threads_per_session(2);
+    
+    cout << "Start server" << endl;
+    server.run();
+}
+
+static void bench_linear_classifier_server(unsigned int model_size, unsigned int nbits_max, unsigned int nRounds = 10)
+{
+    srand(time(NULL));
+    
+    assert(nbits_max > model_size + 1);
+    unsigned int nbits = nbits_max - model_size - 1;
+    
+    long two_nbits = (1 << nbits);
+    
+    vector<mpz_class> model(model_size+1);
+    for (size_t i = 0; i <= model_size; i++) {
+        model[i] = rand()%two_nbits;
+        if (rand()%2) {
+            model[i] *= -1;
+        }
+    }
+    
+    bench_linear_classifier_server(model, nbits_max, nRounds);
+}
+
+static vector<mpz_class> read_model(string file)
+{
+    std::ifstream infile(file);
+    double v;
+    vector<mpz_class> values;
+    while (infile >> v){
+        long v_int = v * 1e13;
+        values.push_back(v_int);
+    }
+    
+    return values;
+}
+
+int main(int argc, char* argv[])
+{
+    if (argc < 2){
+        // randomly generate model
+        cout << "Randomly generate model\n";
+
+        //    test_linear_classifier_server(30, 64);
+        bench_linear_classifier_server(30, 64,10);
+    }else{
+        cout << "Read model file " << argv[1] << endl;
+
+        vector<mpz_class> model = read_model(argv[1]);
+        bench_linear_classifier_server(model,64,10);
+    }
+
+    
+    
+    return 0;
+}
+
+int classify (vector<double> &data, vector<double> &weights)
+{    
+    gmp_randstate_t randstate;
+    gmp_randinit_default(randstate);
+    gmp_randseed_ui(randstate,time(NULL));
+    
+    auto sk_p = Paillier_priv_fast::keygen(randstate,1024);
+    Paillier_priv_fast pp(sk_p,randstate);
+    Paillier p(pp.pubkey(),randstate);
+    
+    auto sk_gm = GM_priv::keygen(randstate);
+    GM_priv gm_priv(sk_gm,randstate);
+    GM gm(gm_priv.pubkey(),randstate);
+
+    mpz_urandom_len(data.get_mpz_t(), randstate, nbits);
+    mpz_urandom_len(weights.get_mpz_t(), randstate, nbits);
+    
+    Compare_A party_data(data, nbits, p, gm, randstate);
+    Compare_B party_weights(weights, nbits, pp, gm_priv);
+    
+    runProtocol(party_data, party_weights,randstate);
+    
+    bool result = party_b.gm().decrypt(party_a.output());
+
+    return bool;
+    
+}
+
+void testPlaintext() {
+    std::cout << "**************************************************\n" << "testPlaintext(Base)\n" << "**************************************************\n";
+    vector<vector<double>> base_train_mat;
+    vector<int> base_train_label;
+    string base_train_file("/data/biovotion");
+    load_dataset_base(base_train_mat, base_train_label, base_train_file);
+
+    vector<vector<double>> base_test_mat;
+    vector<int> base_test_label;
+    string base_test_file("/data/biovotion_test");
+    load_dataset_base(base_test_mat, base_test_label, base_test_file);
+
+    vector<double> base_weight(base_train_mat[0].size(), 1);
+
+    START_TIMER
+    gradAscent(base_weight, base_train_mat, base_train_label, num_iter, 0.008);
+    STOP_TIMER("base")
+    auto err = testResult(base_test_mat, base_test_label, base_weight);
+    std::cout << "accuracy: " << (1 - err) * 100 << " %\n";
+    std::cout << "**************************************************\n\n";
+}
+
+void PrivESD_test(int &party) {
+    std::cout << "**************************************************\n" << "PrivESD_test:\n" << "**************************************************\n";
+    string train_file, test_file;
+    if (party == ALICE) {
+        std::cout << "Party: ALICE"
+                  << "\n";
+        train_file = "/data/biovotion_alice";
+        test_file = "/data/biovotion_alice_test";
+    } else {
+        party = BOB;
+        std::cout << "Party: BOB"
+                  << "\n";
+        train_file = "/data/biovotion_bob";
+        test_file = "/data/biovotion_bob_test";
+    }
+    IOPack *io_pack = new IOPack(party);
+
+    vector<vector<double>> train_mat, test_mat;
+    vector<int> train_label, test_label;
+    load_dataset(train_mat, train_label, train_file);
+    load_dataset(test_mat, test_label, test_file);
+    const size_t size = train_mat[0].size();
+
+    Logistic *logistic = new Logistic(party, io_pack);
+    START_TIMER
+    logistic->gradAscent(train_mat, train_label, num_iter, 0.008);
+    STOP_TIMER("train")
+
+    size_t comm = io_pack->get_comm();
+    size_t rounds = io_pack->get_rounds();
+    if (comm < 1024) {
+        printf("data size of communication: %ld B\n", comm);
+    } else if (comm < 1024 * 1024) {
+        printf("data size of communication: %.2lf KB\n", comm / 1024.);
+    } else if (comm < 1024 * 1024 * 1024) {
+        printf("data size of communication: %.2lf MB\n", comm / (1024. * 1024.));
+    } else {
+        printf("data size of communication: %.2lf MB\n", comm / (1024. * 1024. * 1024.));
+    }
+    std::cout << "rounds of communication: " << rounds << "\n";
+
+    size_t test_size = test_mat.size();
+    vector<double> result = logistic->classify(test_mat);
+    if (party == BOB) {
+        io_pack->send_data(result.data(), sizeof(double) * test_size);
+        io_pack->send_data(test_label.data(), sizeof(int) * test_size);
+    } else {
+        vector<double> result_remote(test_size);
+        vector<int> test_label_remote(test_size);
+        io_pack->recv_data(result_remote.data(), sizeof(double) * test_size);
+        io_pack->recv_data(test_label_remote.data(), sizeof(int) * test_size);
+        double acc = 0.;
+        for (size_t i = 0; i < test_size; i++) {
+            int res = result[i] + result_remote[i] > 0.5 ? 1 : 0;
+            if (res == (test_label[i] + test_label_remote[i])) {
+                acc += 1.;
+            }
+        }
+        acc /= test_size;
+        std::cout << "accuracy: " << acc * 100 << " %\n";
+    }
+
+    delete io_pack;
+    delete logistic;
+    std::cout << "**************************************************\n\n";
+}
+
+int main(int argc, const char **argv) {
+if (argc < 2)
+    int party = argv[1][0] - '0';
+    Paillier_test(party);
+    if (party == BOB) {
+        testPlaintext();
+    }
+ // randomly generate model
+        cout << "Randomly generate model\n";
+
+        //    test_linear_classifier_server(30, 64);
+        bench_linear_classifier_server(30, 64,10);
+    }else{
+        cout << "Read model file " << argv[1] << endl;
+
+        vector<mpz_class> model = read_model(argv[1]);
+        bench_linear_classifier_server(model,64,10);
+}
